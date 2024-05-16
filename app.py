@@ -40,9 +40,9 @@ class UserData(Resource):
         password = data.get('password_1')
         
         if not all([username, phone_number, password]):
-            return make_response(jsonify({'errors': ['Missing required data']}), 401)
+            return make_response(jsonify({'errors': ['Missing required data']}), 400)
 
-        if User.query.filter_by(phone_number=phone_number).first():
+        if User.query.filter_by(phone_number=phone_number).first() or User.query.filter_by(username=username).first() or  User.query.filter_by(email=email).first():
             return make_response(jsonify({'message': 'User already exists'}), 400)
         
         # Generate OTP
@@ -85,8 +85,8 @@ class VerifyOTP(Resource):
         if not user:
             return make_response(jsonify({'error': 'No user found for the provided phone number'}), 404)
         print(user.otp)
-        # if user.otp != otp:
-        #     return make_response(jsonify({'error': 'OTP is incorrect'}), 400)
+        if user.otp != otp:
+            return make_response(jsonify({'error': 'OTP is incorrect'}), 400)
         user.status ='active'
 
         db.session.commit()
@@ -98,11 +98,11 @@ class Login(Resource):
         password = request.json.get("password")
 
         if not email or not password:
-            return make_response(jsonify({"msg": "Bad Email or password"}), 401)
+            return make_response(jsonify({"message": "Please enter Email and Password to continue"}), 400)
 
         user = User.query.filter_by(email=email).first()
         if not user:
-            return make_response(jsonify({"msg": "Wrong credentials"}), 401)
+            return make_response(jsonify({"message": "Wrong credentials"}), 401)
 
         if check_password_hash(user._password_hash, password):
             access_token = create_access_token(identity=user.id)
@@ -118,7 +118,7 @@ class CheckSession(Resource):
         user = User.query.filter_by(id=user_id).first()
 
         if not user:
-            return {"message": "user not found"}
+            return make_response(jsonify({"message": "user not found"}), 403)
 
         user_data = {
             "user_id": user.id,
