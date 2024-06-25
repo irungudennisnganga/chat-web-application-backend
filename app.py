@@ -34,7 +34,7 @@ class UserData(Resource):
         data = request.json
         
         username = data.get('username')
-        phone_number = data.get('contact')
+        phone_number = data.get('phone_number')
         email = data.get('email')
         profile_picture = data.get('profile_picture')
         password = data.get('password_1')
@@ -84,8 +84,9 @@ class VerifyOTP(Resource):
         
         if not user:
             return make_response(jsonify({'error': 'No user found for the provided phone number'}), 404)
-        print(user.otp)
-        if user.otp != otp:
+        # print(user.otp == int(otp))
+        # print(int(otp))
+        if user.otp != int(otp):
             return make_response(jsonify({'error': 'OTP is incorrect'}), 400)
         user.status ='active'
 
@@ -122,9 +123,9 @@ class CheckSession(Resource):
 
         user_data = {
             "user_id": user.id,
-            "username": user.useername,
-            "email": user.email,
-            "contact": user.contact,
+            "username": user.username,
+            # "email": user.email,
+            # "contact": user.contact,
             
         }
 
