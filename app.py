@@ -12,6 +12,11 @@ import random
 import string
 import datetime
 
+cloudinary.config(
+    cloud_name='dups4sotm',
+    api_key='141549863151677',
+    api_secret='ml0oq6T67FZeXf6AFJqhhPsDfAs'
+)
 def send_email(email,subject,body):
     
     smtp_server = 'smtp.gmail.com'
@@ -31,19 +36,36 @@ def send_email(email,subject,body):
 
 class UserData(Resource):
     def post(self):
-        data = request.json
+        data = request.form
         
         username = data.get('username')
         phone_number = data.get('phone_number')
         email = data.get('email')
-        profile_picture = data.get('profile_picture')
+        # profile_picture = data.get('profile_picture')
         password = data.get('password_1')
-        
-        if not all([username, phone_number, password]):
+        image_file = request.files.get('image')
+        # print(image_file)
+        if not all([username, phone_number, password,image_file]):
             return make_response(jsonify({'errors': ['Missing required data']}), 400)
 
         if User.query.filter_by(phone_number=phone_number).first() or User.query.filter_by(username=username).first() or  User.query.filter_by(email=email).first():
             return make_response(jsonify({'message': 'User already exists'}), 400)
+        
+        if image_file.filename == '':
+                return {'error': 'No image selected for upload'}, 400
+        
+        
+        def allowed_file(filename):
+                return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'gif' ,'webp'}
+        if not allowed_file(image_file.filename):
+                return {'error': 'Invalid file type. Only images are allowed'}, 400
+
+            # Upload image to Cloudinary
+        try:
+            image_upload_result = cloudinary.uploader.upload(image_file)
+        except Exception as e:
+            # print(str(e))
+            return {'error': f'Error uploading image: {str(e)}'}, 500
         
         # Generate OTP
         otp = self.generate_otp()
@@ -55,7 +77,7 @@ class UserData(Resource):
             username=username,
             phone_number=phone_number,
             email=email,
-            profile_picture=profile_picture,
+            profile_picture=image_upload_result['secure_url'],
             _password_hash=bcrypt.generate_password_hash(password).decode('utf-8'),
             otp=otp,
             
