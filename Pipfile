@@ -18,6 +18,7 @@ flask-cors = "*"
 flask-jwt-extended = "*"
 faker = "*"
 cloudinary = "*"
+flask-socketio = "*"
 
 [dev-packages]
 

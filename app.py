@@ -1,10 +1,11 @@
 from models import User, Conversation, Message
-from config import app, api, db, bcrypt
+from config import app, api, db, bcrypt,socketio
 from flask_restful import Resource
 from flask import request, jsonify, make_response
 from flask_bcrypt import check_password_hash, generate_password_hash
 from flask_jwt_extended import JWTManager, create_access_token, get_jwt_identity, jwt_required
 import cloudinary
+from flask_socketio import SocketIO, emit
 import smtplib
 import cloudinary.uploader
 import cloudinary.api
@@ -146,17 +147,165 @@ class CheckSession(Resource):
         user_data = {
             "user_id": user.id,
             "username": user.username,
-            # "email": user.email,
-            # "contact": user.contact,
+            "email": user.email,
+            "contact": user.phone_number,
+            "profile_picture":user.profile_picture
             
         }
 
         return make_response(jsonify(user_data), 200)
-           
+ 
+class UsersAvailable(Resource):
+    @jwt_required()
+    def get(self):
+        user_id = get_jwt_identity()
+
+        user = User.query.filter_by(id=user_id, status='active').first()
+        
+        if not user:
+            return make_response(jsonify({"message": "User not found", "status": 403}), 403)
+        
+        users = User.query.filter_by(status='active').all()
+        users_data = [self.user_to_dict(u) for u in users]
+
+        return make_response(jsonify({"users": users_data, "status": 200}), 200)
+    
+    def user_to_dict(self, user):
+        return {
+            "id": user.id,
+            "username": user.username,
+            "phone_number": user.phone_number,
+            "email": user.email,
+            "profile_picture": user.profile_picture,
+            "status": user.status
+        }
+
+
+         
+     
+class UserConversation(Resource):
+    @jwt_required()
+    def get(self):
+        user_id = get_jwt_identity()
+
+        user = User.query.filter_by(id=user_id).first()
+        
+        if not user:
+            return make_response(jsonify({"message": "User not found"}), 403)
+        
+        # Get all conversations where the user is either user_1 or user_2
+        conversations = Conversation.query.filter(
+            (Conversation.user_1_id == user_id) | (Conversation.user_2_id == user_id)
+        ).all()
+
+        if len(conversations) == 0:
+            return make_response(jsonify({"message": "No Conversations", "status": 201}), 201)
+        
+        # Filter conversations to only include those with messages
+        conversations_with_messages = []
+        for conversation in conversations:
+            if conversation.messages:  # Check if the conversation has messages
+                conversations_with_messages.append(conversation.to_dict())
+
+        if not conversations_with_messages:
+            return make_response(jsonify({"message": "No Conversations with Messages", "status": 201}), 201)
+
+        return make_response(jsonify({"conversations": conversations_with_messages, "status": 200}), 200)
+
+class NewUserConversation(Resource):
+    @jwt_required()
+    def post(self, user_2):
+        user_1 = get_jwt_identity()
+        
+        if not user_1:
+            return make_response(jsonify({"message": "User not found", "status":403}), 403)
+        
+        # Check if there is an existing conversation
+        conversation = Conversation.query.filter(
+            ((Conversation.user_1_id == user_1) & (Conversation.user_2_id == user_2)) |
+            ((Conversation.user_1_id == user_2) & (Conversation.user_2_id == user_1))
+        ).first()
+        
+        if conversation:
+            # If a conversation exists, return the connection ID
+            return make_response(jsonify({"connection_id": conversation.id, "status":200}), 200)
+        
+        # If no conversation exists, create a new one
+        new_conversation = Conversation(user_1_id=user_1, user_2_id=user_2)
+        db.session.add(new_conversation)
+        db.session.commit()
+        
+        return make_response(jsonify({"connection_id": new_conversation.id, "status":201}), 201)
+class MessageResource(Resource):
+    @jwt_required()
+    def post(self, conversation_id):
+        data = request.json
+        sender_id = get_jwt_identity()
+
+        conversation = Conversation.query.filter_by(id=conversation_id).first()
+        if not conversation:
+            return make_response(jsonify({'message': 'Conversation not found'}), 404)
+
+        if conversation.user_1_id == sender_id:
+            receiver_id = conversation.user_2_id
+        elif conversation.user_2_id == sender_id:
+            receiver_id = conversation.user_1_id
+        else:
+            return make_response(jsonify({'message': 'User not part of the conversation'}), 403)
+
+        content = data.get('content')
+        if not content:
+            return make_response(jsonify({'message': 'Content is required'}), 400)
+
+        # Create a new message instance
+        new_message = Message(
+            conversation_id=conversation_id,
+            sender_id=sender_id,
+            receiver_id=receiver_id,
+            content=content
+        )
+
+        # Save the message to the database
+        try:
+            db.session.add(new_message)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return make_response(jsonify({'message': 'Database error', 'error': str(e)}), 500)
+
+        # Emit the message to the receiver using SocketIO
+        message_data = new_message.to_dict()
+        socketio.emit('receive_message', message_data, room=f'user_{receiver_id}')
+
+        return make_response(jsonify({'message': 'Message sent successfully', 'data': message_data}), 200)
+    
+    @jwt_required()
+    def get(self, conversation_id):
+        if not conversation_id:
+            return make_response(jsonify({'message': 'Missing conversation_id parameter'}), 400)
+
+        try:
+            # Fetch messages based on the conversation_id
+            messages = Message.query.filter_by(conversation_id=conversation_id).all()
+            messages_data = [message.to_dict() for message in messages]
+
+            # Emit messages directly to the client using SocketIO
+            socketio.emit('load_messages', messages_data, room=f'conversation_{conversation_id}')
+
+            return make_response(jsonify(messages_data), 200)
+        except Exception as e:
+            return make_response(jsonify({'message': 'Error fetching messages', 'error': str(e)}), 500)
+                 
 api.add_resource(UserData, '/create_account')
 api.add_resource(VerifyOTP, '/verify_otp')
 api.add_resource(Login, '/login')
 api.add_resource(CheckSession, '/check_session')
+api.add_resource(UserConversation, '/conversations')
+api.add_resource(UsersAvailable, '/users')
+api.add_resource(MessageResource, '/messages/<int:conversation_id>')
+api.add_resource(NewUserConversation, '/new_conversation/<int:user_2>')
 
 if __name__ == "__main__":
     app.run(port=5555, debug=True)
+if __name__ == '__main__':
+    socketio.run(app, port=5555, debug=True)
