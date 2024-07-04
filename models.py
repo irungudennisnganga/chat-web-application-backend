@@ -1,7 +1,7 @@
 from config import db, bcrypt
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import validates
-from datetime import datetime
+
 class User(db.Model):
     __tablename__ ='user'
 

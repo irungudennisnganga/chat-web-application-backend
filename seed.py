@@ -1,11 +1,14 @@
-from config import app, db,bcrypt
-from models import User, Conversation, Message
+import base64
 from datetime import datetime, timedelta
-
-
+from config import app, db, bcrypt
+from models import User, Conversation, Message
+from app import key,cipher
+# Generate a key for encryption/decryption
+# Ensure this key matches the one used in your application
+# key = Fernet.generate_key()
+# cipher = Fernet(key)
 
 password_hash = bcrypt.generate_password_hash('mypassword').decode('utf-8')
-# password_hash2 = bcrypt.generate_password_hash('password').decode('utf-8')
 
 # Sample user data
 user_data = [
@@ -102,12 +105,15 @@ def seed_messages():
     with app.app_context():
         clear_messages()
         for message_info in messages_data:
+            # Encrypt the message content and base64 encode it
+            encrypted_content = base64.b64encode(cipher.encrypt(message_info['content'].encode())).decode('utf-8')
+
             # Create a new message object
             new_message = Message(
                 conversation_id=message_info['conversation_id'],
                 sender_id=message_info['sender_id'],
                 receiver_id=message_info['receiver_id'],
-                content=message_info['content'],
+                content=encrypted_content,
                 timestamp=datetime.utcnow() - timedelta(days=1)  # Example: Set message timestamp in the past
             )
             db.session.add(new_message)

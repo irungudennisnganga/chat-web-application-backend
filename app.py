@@ -1,10 +1,13 @@
+import base64 
 from models import User, Conversation, Message
 from config import app, api, db, bcrypt,socketio
+from cryptography.fernet import Fernet, InvalidToken
 from flask_restful import Resource
 from flask import request, jsonify, make_response
 from flask_bcrypt import check_password_hash, generate_password_hash
 from flask_jwt_extended import JWTManager, create_access_token, get_jwt_identity, jwt_required
 import cloudinary
+import traceback
 from flask_socketio import SocketIO, emit
 import smtplib
 import cloudinary.uploader
@@ -12,6 +15,11 @@ import cloudinary.api
 import random
 import string
 import datetime
+
+
+key = b'ehQGERS7-iWwpRAB3ShMPCy01eIcVGdzT-tsd3lR35Q='
+cipher = Fernet(key)
+print(cipher)
 
 cloudinary.config(
     cloud_name='dups4sotm',
@@ -257,12 +265,18 @@ class MessageResource(Resource):
         if not content:
             return make_response(jsonify({'message': 'Content is required'}), 400)
 
+        try:
+            # Encrypt the message content and base64 encode it
+            encrypted_content = base64.b64encode(cipher.encrypt(content.encode())).decode('utf-8')
+        except Exception as e:
+            return make_response(jsonify({'message': 'Encryption error', 'error': str(e)}), 500)
+
         # Create a new message instance
         new_message = Message(
             conversation_id=conversation_id,
             sender_id=sender_id,
             receiver_id=receiver_id,
-            content=content
+            content=encrypted_content
         )
 
         # Save the message to the database
@@ -275,27 +289,53 @@ class MessageResource(Resource):
 
         # Emit the message to the receiver using SocketIO
         message_data = new_message.to_dict()
+        # Send encrypted content for storage, and decrypted content for display
+        message_data['content'] = content  # Send the decrypted content to the receiver via SocketIO
         socketio.emit('receive_message', message_data, room=f'user_{receiver_id}')
 
         return make_response(jsonify({'message': 'Message sent successfully', 'data': message_data}), 200)
-    
+
     @jwt_required()
     def get(self, conversation_id):
         if not conversation_id:
             return make_response(jsonify({'message': 'Missing conversation_id parameter'}), 400)
 
+        sender_id = get_jwt_identity()
+        conversation = Conversation.query.filter_by(id=conversation_id).first()
+        if not conversation:
+            return make_response(jsonify({'message': 'Conversation not found'}), 404)
+
+        if conversation.user_1_id != sender_id and conversation.user_2_id != sender_id:
+            return make_response(jsonify({'message': 'User not part of the conversation'}), 403)
+
         try:
             # Fetch messages based on the conversation_id
             messages = Message.query.filter_by(conversation_id=conversation_id).all()
-            messages_data = [message.to_dict() for message in messages]
+            decrypted_messages = []
+            for message in messages:
+                try:
+                    # Base64 decode and decrypt the message content
+                    decrypted_content = cipher.decrypt(base64.b64decode(message.content)).decode('utf-8')
+                    message_data = message.to_dict()
+                    message_data['content'] = decrypted_content
+                    decrypted_messages.append(message_data)
+                except InvalidToken:
+                    print(f"Error decrypting message {message.id}: Invalid token")
+                    print(traceback.format_exc())
+                except Exception as decrypt_error:
+                    print(f"Error decrypting message {message.id}: {str(decrypt_error)}")
+                    print(traceback.format_exc())
+                    continue
 
             # Emit messages directly to the client using SocketIO
-            socketio.emit('load_messages', messages_data, room=f'conversation_{conversation_id}')
+            socketio.emit('load_messages', decrypted_messages, room=f'conversation_{conversation_id}')
 
-            return make_response(jsonify(messages_data), 200)
+            return make_response(jsonify(decrypted_messages), 200)
         except Exception as e:
+            print(f"Error fetching messages: {str(e)}")
+            print(traceback.format_exc())
             return make_response(jsonify({'message': 'Error fetching messages', 'error': str(e)}), 500)
-                 
+        
 api.add_resource(UserData, '/create_account')
 api.add_resource(VerifyOTP, '/verify_otp')
 api.add_resource(Login, '/login')
