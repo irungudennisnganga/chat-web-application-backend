@@ -124,7 +124,7 @@ ii. phone_number -- integer (required)
 
 iii. email -- email (required)
 
-iv. profile_picture -- image (not a must)
+iv. profile_picture -- image (required)
 
 v. password -- password (required)
 
@@ -178,9 +178,5 @@ the users table to get the user based on the id
             "user_id": user.id,
 
             "username": user.useername,
-
-            "email": user.email,
-
-            "contact": user.contact, 
 
         }
