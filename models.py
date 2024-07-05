@@ -38,12 +38,23 @@ class User(db.Model):
 
     def authenticate(self, password):
         return bcrypt.check_password_hash(self._password_hash, password.encode('utf-8'))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'phone_number': self.phone_number,
+            'email': self.email,
+            'profile_picture': self.profile_picture,
+            'status': self.status,
+            'otp': self.otp
+        }
 
     def __repr__(self):
         return f"User('{self.username}', '{self.profile_picture}', '{self.phone_number}')"
 
 class Conversation(db.Model):
-    __tablename__ ='conversation'
+    __tablename__ = 'conversation'
     
     id = db.Column(db.Integer, primary_key=True)
     user_1_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -51,8 +62,19 @@ class Conversation(db.Model):
     
     messages = db.relationship('Message', backref='conversation')
 
+    def to_dict(self):
+        user_1 = User.query.get(self.user_1_id)
+        user_2 = User.query.get(self.user_2_id)
+        
+        return {
+            'id': self.id,
+            'user_1': user_1.to_dict(),
+            'user_2': user_2.to_dict(),
+            'messages': [message.to_dict() for message in self.messages]
+        }
+
 class Message(db.Model):
-    __tablename__ ='message'
+    __tablename__ = 'message'
 
     id = db.Column(db.Integer, primary_key=True)
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversation.id'), nullable=False)
@@ -60,3 +82,16 @@ class Message(db.Model):
     receiver_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, nullable=False, default=db.func.current_timestamp())
+
+    def to_dict(self):
+        sender_user = User.query.get(self.sender_id)
+        receiver_user = User.query.get(self.receiver_id)
+        
+        return {
+            'id': self.id,
+            'conversation_id': self.conversation_id,
+            'sender': sender_user.to_dict(),
+            'receiver': receiver_user.to_dict(),
+            'content': self.content,
+            'timestamp': self.timestamp.isoformat()
+        }
