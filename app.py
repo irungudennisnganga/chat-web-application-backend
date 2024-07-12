@@ -19,7 +19,7 @@ import datetime
 
 key = b'ehQGERS7-iWwpRAB3ShMPCy01eIcVGdzT-tsd3lR35Q='
 cipher = Fernet(key)
-print(cipher)
+
 
 cloudinary.config(
     cloud_name='dups4sotm',
@@ -58,7 +58,7 @@ class UserData(Resource):
             return make_response(jsonify({'errors': ['Missing required data']}), 400)
 
         if User.query.filter_by(phone_number=phone_number).first() or User.query.filter_by(username=username).first() or  User.query.filter_by(email=email).first():
-            return make_response(jsonify({'message': 'User already exists'}), 400)
+            return make_response(jsonify({'message': 'User already exists'}), 409)
         
         if image_file.filename == '':
                 return {'error': 'No image selected for upload'}, 400
@@ -162,7 +162,49 @@ class CheckSession(Resource):
         }
 
         return make_response(jsonify(user_data), 200)
- 
+
+
+class CheckUserForForgottenPassword(Resource):
+    def patch(self):
+        data = request.get_json()
+        email = data.get('email')
+
+        if not email:
+            return make_response(jsonify({'message': 'Email is missing'}), 400)
+        
+        user = User.query.filter_by(email=email).first()
+        # print(user)
+        if user is None:
+            return make_response(jsonify({'message': 'User not found'}), 404)
+        else:
+            return make_response(jsonify({'message': 'User found'}), 200)
+
+
+class UpdatePassword(Resource):
+    def patch(self):
+        data = request.get_json()
+
+        email = data.get('email')
+        pass1 = data.get('password')
+        pass2 = data.get('confirmPassword')
+        # print(email,pass1,pass2)
+
+        if not email or not pass1 or not pass2:
+            return make_response(jsonify({'message': 'Missing email or passwords'}), 400)
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return make_response(jsonify({'message': 'User not found'}), 404)
+
+        if pass1 != pass2:
+            return make_response(jsonify({'message': 'Passwords do not match'}), 400)
+
+        hashed_password = bcrypt.generate_password_hash(pass1).decode('utf-8')
+        user._password_hash = hashed_password
+        db.session.commit()
+
+        return make_response(jsonify({'message': 'Password updated successfully'}), 200)
+        
 class UsersAvailable(Resource):
     @jwt_required()
     def get(self):
@@ -339,11 +381,13 @@ class MessageResource(Resource):
 api.add_resource(UserData, '/create_account')
 api.add_resource(VerifyOTP, '/verify_otp')
 api.add_resource(Login, '/login')
+api.add_resource(CheckUserForForgottenPassword, '/check-user-forgotten-password')
 api.add_resource(CheckSession, '/check_session')
 api.add_resource(UserConversation, '/conversations')
 api.add_resource(UsersAvailable, '/users')
 api.add_resource(MessageResource, '/messages/<int:conversation_id>')
 api.add_resource(NewUserConversation, '/new_conversation/<int:user_2>')
+api.add_resource(UpdatePassword, '/update-password')
 
 if __name__ == "__main__":
     app.run(port=5555, debug=True)
