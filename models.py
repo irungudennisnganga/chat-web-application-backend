@@ -12,7 +12,7 @@ class User(db.Model):
     _password_hash = db.Column(db.String, nullable=False)
     profile_picture = db.Column(db.String)
     status = db.Column(db.String, default='inactive')
-    
+    timestamp =db.Column(db.String, nullable=False, default=db.func.current_timestamp())
     otp =db.Column(db.Integer)
     
     messages_sent = db.relationship("Message", foreign_keys='Message.sender_id', backref='sender')
@@ -59,7 +59,7 @@ class Conversation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_1_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     user_2_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    
+    timestamp =db.Column(db.DateTime, nullable =False, default=db.func.current_timestamp())
     messages = db.relationship('Message', backref='conversation')
 
     def to_dict(self):

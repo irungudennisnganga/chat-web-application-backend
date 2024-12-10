@@ -204,7 +204,55 @@ class UpdatePassword(Resource):
         db.session.commit()
 
         return make_response(jsonify({'message': 'Password updated successfully'}), 200)
+
+class UpdateUser(Resource):
+    @jwt_required()
+    def patch(self):
+        user_id =get_jwt_identity()
+        data = request.form
         
+        if request.files.get('profile_picture') is None:
+            data =request.get_json()
+
+        user = User.query.filter_by(id=user_id).first()
+        if not user:
+            return make_response(jsonify({'message': 'User not found'}), 404)
+
+        username = data.get('username')
+        contact = data.get('contact')
+        
+        image_file = request.files.get('profile_picture')
+        if image_file is not None :
+            
+            if image_file.filename == '':
+                return {'error': 'No image selected for upload'}, 400
+        
+        
+            def allowed_file(filename):
+                    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'gif' ,'webp'}
+            if not allowed_file(image_file.filename):
+                    return {'error': 'Invalid file type. Only images are allowed'}, 400
+
+            try:
+                image_upload_result = cloudinary.uploader.upload(image_file)
+                user.profile_picture =image_upload_result['secure_url']
+            except Exception as e:
+                # print(str(e))
+                return {'error': f'Error uploading image: {str(e)}'}, 500
+
+        if username:
+            user.username = username
+
+        if contact:
+            user2 = User.query.filter_by(phone_number =contact).first()
+            if user2:
+                return {'error': 'User already exist with this number'}, 409
+            
+            user.phone_number = contact
+
+        db.session.commit()
+        
+        return make_response(jsonify({'message': 'User updated successfully'}), 200)       
 class UsersAvailable(Resource):
     @jwt_required()
     def get(self):
@@ -384,6 +432,7 @@ api.add_resource(Login, '/login')
 api.add_resource(CheckUserForForgottenPassword, '/check-user-forgotten-password')
 api.add_resource(CheckSession, '/check_session')
 api.add_resource(UserConversation, '/conversations')
+api.add_resource(UpdateUser, '/update_user')
 api.add_resource(UsersAvailable, '/users')
 api.add_resource(MessageResource, '/messages/<int:conversation_id>')
 api.add_resource(NewUserConversation, '/new_conversation/<int:user_2>')
